@@ -1,5 +1,15 @@
 # Advanced SQL Reference Guide
-## European Sports League Database Analysis
+## Soccer Leagues Database Analysis
+
+---
+
+## Project Overview
+
+This project analyzes real data from Europe's top 5 football leagues during the 2023-2024 season. Using a database with 10 interconnected tables containing information about 96 teams, 3,150 players, and 1,752 matches, I wanted to explore various aspects of football through SQL queries.
+
+The analysis covers questions like: Which teams scored the most goals? How do home and away performances differ? What nationalities dominate each league? When are matches typically scheduled? Through these questions, we demonstrate essential SQL concepts including joins, aggregations, window functions, string manipulation, date operations, and set operations.
+
+This guide serves as both a learning resource and a reference for SQL interviews, showcasing practical applications of database queries on real-world sports data. 
 
 ---
 
@@ -14,7 +24,7 @@
    - [Question 3: Match Results Classification](#question-3-match-results-classification)
    - [Question 4: Team Standings Rankings](#question-4-team-standings-rankings)
    - [Question 5: Home vs Away Performance Trends](#question-5-home-vs-away-performance-trends)
-   - [Question 6: Player Demographics Analysis](#question-6-player-demographics-analysis)
+   - [Question 6: Player Nationality Distribution](#question-6-player-nationality-distribution)
    - [Question 7: Match Scheduling Insights](#question-7-match-scheduling-insights)
    - [Question 8: Home vs Away Aggregate Comparison](#question-8-home-vs-away-aggregate-comparison)
 5. [SQL Concepts Covered](#sql-concepts-covered)
@@ -137,7 +147,7 @@ erDiagram
 
 ### Tables Description
 
-- **leagues**: 5 top European leagues (Premier League, La Liga, Bundesliga, Serie A, Ligue 1)
+- **leagues**: Top 5 European football leagues (Premier League, La Liga, Bundesliga, Serie A, Ligue 1)
 - **teams**: 96 teams with stadium and coach relationships
 - **players**: 3,150 players with positions, nationalities, and birth dates
 - **matches**: 1,752 matches from 2023-2024 season
@@ -209,25 +219,21 @@ sqlite3 sports_league.sqlite < sports_league_queries.sql > output.txt
 
 **Query:**
 ```sql
--- Get all leagues with their characteristics
+-- View all leagues
 SELECT 
     league_id,
     name AS league_name,
-    country,
-    cl_spot AS champions_league_spots,
-    ul_spot AS europa_league_spots,
-    relegation_spot AS relegation_spots
+    country
 FROM leagues
 ORDER BY country;
 
--- Count teams per league
+-- Count teams per league (using LEFT JOIN)
 SELECT 
     l.name AS league_name,
-    l.country,
     COUNT(t.team_id) AS total_teams
 FROM leagues l
 LEFT JOIN teams t ON l.league_id = t.league_id
-GROUP BY l.league_id, l.name, l.country
+GROUP BY l.league_id, l.name
 ORDER BY total_teams DESC;
 ```
 
@@ -267,7 +273,7 @@ Ligue 1          18
 
 **Brief Explanation:**
 
-This query provides a foundational overview of the database structure. The first query shows all leagues with their competition qualification spots (Champions League, Europa League) and relegation zones. The second query uses a LEFT JOIN to count teams in each league, demonstrating how to aggregate data across related tables. This is essential for understanding the dataset before running more complex queries.
+This foundational query gives us a bird's-eye view of the database structure. The first part simply lists all five leagues alphabetically by country. The second query demonstrates a LEFT JOIN between leagues and teams, then uses GROUP BY to count how many teams belong to each league. We can see that the Premier League, Serie A, and La Liga each have 20 teams, while Bundesliga and Ligue 1 have 18 teams each. This difference reflects real-world league structures where German and French leagues traditionally have fewer teams than their English, Italian, and Spanish counterparts.
 
 ---
 
@@ -280,23 +286,16 @@ This query provides a foundational overview of the database structure. The first
 SELECT 
     t.name AS team_name,
     l.name AS league_name,
-    st.played_games,
-    st.won,
-    st.draw,
-    st.lost,
     st.goals_for,
     st.goals_against,
     st.goal_difference,
     st.points,
-    ROUND(CAST(st.goals_for AS FLOAT) / st.played_games, 2) AS goals_per_game,
-    ROUND(CAST(st.points AS FLOAT) / st.played_games, 2) AS points_per_game
+    st.played_games,
+    ROUND(CAST(st.goals_for AS FLOAT) / st.played_games, 2) AS goals_per_game
 FROM standings st
 INNER JOIN teams t ON st.team_id = t.team_id
 INNER JOIN leagues l ON st.league_id = l.league_id
-WHERE st.goals_for > 50
-GROUP BY t.team_id, t.name, l.name, st.played_games, st.won, st.draw, 
-         st.lost, st.goals_for, st.goals_against, st.goal_difference, st.points
-HAVING st.goals_for > 50
+WHERE st.goals_for >= 60
 ORDER BY st.goals_for DESC
 LIMIT 10;
 ```
@@ -318,9 +317,9 @@ Paris Saint-Germain FC         Ligue 1          81         33             48    
 ```
 
 **Key Insights:**
-- Manchester City scored the most goals (96) with 2.53 goals per game
-- FC Bayern München had the highest goals per game rate (2.76)
-- All top 10 teams scored 60+ goals in the season
+- Manchester City topped the scoring charts with 96 goals, though Bayern München had a higher goals-per-game rate (2.76)
+- The top 10 includes multiple teams from the Premier League, showing its offensive nature
+- Bayer Leverkusen had an exceptional season with 89 goals and the best goal difference (+65)
 
 **Functions Practiced:**
 - SELECT with calculated columns
@@ -336,7 +335,7 @@ Paris Saint-Germain FC         Ligue 1          81         33             48    
 
 **Brief Explanation:**
 
-This query identifies the highest-scoring teams by joining standings data with team and league information. It demonstrates the difference between WHERE (filters individual rows before aggregation) and HAVING (filters grouped results after aggregation). The calculated columns (goals_per_game, points_per_game) show how to create derived metrics using CAST for proper float division. This is crucial for comparing teams that may have played different numbers of games.
+This query joins three tables to combine team names, league information, and performance statistics. We filter for teams that scored at least 60 goals to focus on high-performing offenses. The CAST and ROUND functions work together to calculate a clean goals-per-game metric - CAST converts the integer to a float for proper division, and ROUND formats it to two decimal places. The results reveal interesting patterns: Bayern München actually had the highest scoring rate despite Manchester City scoring more total goals, which makes sense given Bayern played fewer games (34 vs 38). This demonstrates why calculating per-game averages is important when comparing across leagues with different game totals.
 
 ---
 
@@ -351,40 +350,24 @@ SELECT
     m.utc_date AS match_date,
     ht.name AS home_team,
     at.name AS away_team,
-    s.full_time_home AS home_score,
-    s.full_time_away AS away_score,
+    s.full_time_home,
+    s.full_time_away,
     (s.full_time_home + s.full_time_away) AS total_goals,
-    l.name AS league_name,
-    m.winner,
     CASE 
         WHEN m.winner = 'HOME_TEAM' THEN 'Home Win'
         WHEN m.winner = 'AWAY_TEAM' THEN 'Away Win'
         ELSE 'Draw'
-    END AS match_result,
-    CASE 
-        WHEN ABS(s.full_time_home - s.full_time_away) >= 3 THEN 'Blowout'
-        WHEN ABS(s.full_time_home - s.full_time_away) = 2 THEN 'Comfortable'
-        WHEN ABS(s.full_time_home - s.full_time_away) = 1 THEN 'Close Match'
-        ELSE 'Draw'
-    END AS competitiveness,
+    END AS result,
     CASE 
         WHEN (s.full_time_home + s.full_time_away) >= 5 THEN 'High Scoring'
         WHEN (s.full_time_home + s.full_time_away) >= 3 THEN 'Moderate'
         ELSE 'Low Scoring'
-    END AS scoring_category,
-    CASE
-        WHEN s.half_time_home > s.half_time_away AND s.full_time_home > s.full_time_away THEN 'Led Wire-to-Wire'
-        WHEN s.half_time_home < s.half_time_away AND s.full_time_home > s.full_time_away THEN 'Comeback Win (Home)'
-        WHEN s.half_time_home > s.half_time_away AND s.full_time_home < s.full_time_away THEN 'Comeback Win (Away)'
-        WHEN s.half_time_home = s.half_time_away AND s.full_time_home = s.full_time_away THEN 'Stalemate'
-        ELSE 'Standard'
-    END AS match_narrative
+    END AS scoring_type
 FROM matches m
 INNER JOIN teams ht ON m.home_team_id = ht.team_id
 INNER JOIN teams at ON m.away_team_id = at.team_id
 INNER JOIN scores s ON m.match_id = s.match_id
-INNER JOIN leagues l ON m.league_id = l.league_id
-ORDER BY m.utc_date DESC, total_goals DESC
+ORDER BY total_goals DESC
 LIMIT 20;
 ```
 
@@ -415,9 +398,9 @@ match_id  match_date  home_team                     away_team                  f
 ```
 
 **Key Insights:**
-- Highest scoring match: Bayern München 8-1 Mainz (9 total goals)
-- Multiple 8-goal matches including 4-4 draws
-- All top 20 matches were classified as "High Scoring" (5+ goals)
+- Bayern München's 8-1 demolition of Mainz tops the list as the highest-scoring single match
+- The top 20 matches are split between home wins, away wins, and draws, with several dramatic 4-4 results
+- Every match in the top 20 featured at least 7 goals, showing these were exceptional offensive performances
 
 **Functions Practiced:**
 - INNER JOIN - Multiple table joins (4-way join)
@@ -428,7 +411,7 @@ match_id  match_date  home_team                     away_team                  f
 
 **Brief Explanation:**
 
-This query demonstrates advanced data transformation by creating four different classification schemes from raw match data. It joins the matches table with teams (twice - once for home, once for away), scores, and leagues. The CASE WHEN statements create categorical variables: match_result (winner), competitiveness (margin), scoring_category (total goals), and match_narrative (comeback/dominance patterns using half-time scores). This showcases how to derive meaningful insights from numerical data through conditional logic.
+This query demonstrates how to transform raw data into meaningful categories using CASE WHEN statements. We join the matches table to teams twice - once for the home team and once for the away team - which is a common pattern when dealing with relationships where the same entity (teams) plays different roles in a match. The first CASE statement translates the stored winner value into human-readable text, while the second categorizes matches by total goals scored. This kind of classification is useful for sports analysis, helping identify nail-biters versus blowouts, or offensive showcases versus defensive battles.
 
 ---
 
@@ -441,25 +424,19 @@ This query demonstrates advanced data transformation by creating four different 
 SELECT 
     t.name AS team_name,
     l.name AS league_name,
-    st.position AS final_position,
+    st.position,
     st.points,
-    st.played_games,
     st.won,
     st.draw,
     st.lost,
-    st.goals_for,
-    st.goal_difference,
-    ROW_NUMBER() OVER (PARTITION BY st.league_id ORDER BY st.points DESC, st.goal_difference DESC) AS rank_row_number,
-    RANK() OVER (PARTITION BY st.league_id ORDER BY st.points DESC, st.goal_difference DESC) AS rank_with_ties,
-    DENSE_RANK() OVER (PARTITION BY st.league_id ORDER BY st.points DESC, st.goal_difference DESC) AS dense_rank,
-    ROUND(AVG(st.points) OVER (PARTITION BY st.league_id), 2) AS league_avg_points,
-    st.points - AVG(st.points) OVER (PARTITION BY st.league_id) AS points_vs_avg,
-    COUNT(*) OVER (PARTITION BY st.league_id) AS teams_in_league,
-    ROUND(100.0 * st.position / COUNT(*) OVER (PARTITION BY st.league_id), 1) AS percentile_position
+    ROW_NUMBER() OVER (PARTITION BY st.league_id ORDER BY st.points DESC) AS rank_number,
+    RANK() OVER (PARTITION BY st.league_id ORDER BY st.points DESC) AS rank_with_ties,
+    ROUND(AVG(st.points) OVER (PARTITION BY st.league_id), 2) AS league_avg_points
 FROM standings st
 INNER JOIN teams t ON st.team_id = t.team_id
 INNER JOIN leagues l ON st.league_id = l.league_id
-ORDER BY l.name, rank_row_number;
+ORDER BY l.name, rank_number
+LIMIT 30;
 ```
 
 **Output/Screenshot:**
@@ -490,10 +467,9 @@ Deportivo Alavés         La Liga          10        46      12   10    16    10
 ```
 
 **Key Insights:**
-- ROW_NUMBER gives unique ranks (8, 9, 10 for Bundesliga teams with 42 points)
-- RANK shows ties (8, 8, 8 for same points)
-- Bundesliga average: 46.5 points, La Liga average: 51.65 points
-- Bayer Leverkusen had an undefeated season (28W, 6D, 0L)
+- Bayer Leverkusen's undefeated season (28W, 6D, 0L) stands out with 90 points
+- Notice how three Bundesliga teams tied with 42 points: ROW_NUMBER gives them ranks 8, 9, 10 while RANK gives them all rank 8
+- La Liga's average points (51.65) is higher than Bundesliga's (46.5), partly because La Liga teams play more games
 
 **Functions Practiced:**
 - OVER - Define window function scope
@@ -506,7 +482,7 @@ Deportivo Alavés         La Liga          10        46      12   10    16    10
 
 **Brief Explanation:**
 
-This query showcases the power of window functions for ranking and comparative analysis. PARTITION BY league_id creates separate ranking contexts for each league, allowing fair comparisons. Three ranking methods are demonstrated: ROW_NUMBER (always unique, 1-2-3-4), RANK (with gaps for ties, 1-2-2-4), and DENSE_RANK (no gaps, 1-2-2-3). The query also calculates league-wide averages and compares each team's performance against their league's average. Unlike GROUP BY, window functions retain row-level detail while computing aggregates, enabling rich comparative analysis in a single query.
+Window functions shine in this query. Unlike GROUP BY which collapses rows, window functions let us calculate aggregates while keeping all row-level detail. PARTITION BY creates separate "windows" for each league, so rankings reset for each league rather than being global. The difference between ROW_NUMBER and RANK becomes clear with the Bundesliga teams at 42 points: ROW_NUMBER assigns sequential numbers (8, 9, 10) even for ties, while RANK gives the same rank (8, 8, 8) when points are equal. The AVG() window function calculates each league's average points and includes it on every row, making it easy to compare individual teams to their league's average without writing a separate subquery.
 
 ---
 
@@ -516,62 +492,24 @@ This query showcases the power of window functions for ranking and comparative a
 
 **Query:**
 ```sql
-WITH team_matches AS (
-    SELECT 
-        m.match_id,
-        m.utc_date,
-        m.home_team_id AS team_id,
-        'HOME' AS venue,
-        s.full_time_home AS goals_scored,
-        s.full_time_away AS goals_conceded,
-        CASE 
-            WHEN m.winner = 'HOME_TEAM' THEN 3
-            WHEN m.winner = 'DRAW' THEN 1
-            ELSE 0
-        END AS points_earned
-    FROM matches m
-    INNER JOIN scores s ON m.match_id = s.match_id
-    
-    UNION ALL
-    
-    SELECT 
-        m.match_id,
-        m.utc_date,
-        m.away_team_id AS team_id,
-        'AWAY' AS venue,
-        s.full_time_away AS goals_scored,
-        s.full_time_home AS goals_conceded,
-        CASE 
-            WHEN m.winner = 'AWAY_TEAM' THEN 3
-            WHEN m.winner = 'DRAW' THEN 1
-            ELSE 0
-        END AS points_earned
-    FROM matches m
-    INNER JOIN scores s ON m.match_id = s.match_id
-)
 SELECT 
     t.name AS team_name,
-    tm.utc_date AS match_date,
-    tm.venue,
-    tm.goals_scored,
-    tm.goals_conceded,
-    tm.points_earned,
-    LAG(tm.goals_scored, 1) OVER (PARTITION BY tm.team_id, tm.venue ORDER BY tm.utc_date) AS prev_match_goals,
-    LEAD(tm.goals_scored, 1) OVER (PARTITION BY tm.team_id, tm.venue ORDER BY tm.utc_date) AS next_match_goals,
-    tm.goals_scored - LAG(tm.goals_scored, 1) OVER (PARTITION BY tm.team_id, tm.venue ORDER BY tm.utc_date) AS goal_change,
+    m.utc_date AS match_date,
+    s.full_time_home AS goals_scored,
+    LAG(s.full_time_home) OVER (PARTITION BY t.team_id ORDER BY m.utc_date) AS previous_match_goals,
+    LEAD(s.full_time_home) OVER (PARTITION BY t.team_id ORDER BY m.utc_date) AS next_match_goals,
     CASE 
-        WHEN tm.goals_scored > LAG(tm.goals_scored, 1) OVER (PARTITION BY tm.team_id, tm.venue ORDER BY tm.utc_date) THEN 'Improving'
-        WHEN tm.goals_scored < LAG(tm.goals_scored, 1) OVER (PARTITION BY tm.team_id, tm.venue ORDER BY tm.utc_date) THEN 'Declining'
-        WHEN tm.goals_scored = LAG(tm.goals_scored, 1) OVER (PARTITION BY tm.team_id, tm.venue ORDER BY tm.utc_date) THEN 'Stable'
+        WHEN s.full_time_home > LAG(s.full_time_home) OVER (PARTITION BY t.team_id ORDER BY m.utc_date) THEN 'Improving'
+        WHEN s.full_time_home < LAG(s.full_time_home) OVER (PARTITION BY t.team_id ORDER BY m.utc_date) THEN 'Declining'
+        WHEN s.full_time_home = LAG(s.full_time_home) OVER (PARTITION BY t.team_id ORDER BY m.utc_date) THEN 'Same'
         ELSE 'First Match'
-    END AS scoring_trend,
-    SUM(tm.points_earned) OVER (PARTITION BY tm.team_id, tm.venue ORDER BY tm.utc_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS points_last_3_matches,
-    AVG(tm.goals_scored) OVER (PARTITION BY tm.team_id, tm.venue ORDER BY tm.utc_date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW) AS avg_goals_last_5
-FROM team_matches tm
-INNER JOIN teams t ON tm.team_id = t.team_id
-WHERE t.name IN ('Manchester City', 'Arsenal', 'Liverpool', 'Bayern Munich', 'Real Madrid')
-ORDER BY t.name, tm.venue, tm.utc_date
-LIMIT 50;
+    END AS trend
+FROM matches m
+INNER JOIN teams t ON m.home_team_id = t.team_id
+INNER JOIN scores s ON m.match_id = s.match_id
+WHERE t.name IN ('Manchester City', 'Arsenal', 'Real Madrid', 'Bayern Munich')
+ORDER BY t.name, m.utc_date
+LIMIT 30;
 ```
 
 **Output/Screenshot:**
@@ -612,10 +550,9 @@ Manchester City  2024-02-10  2             3                     1              
 ```
 
 **Key Insights:**
-- LAG() shows previous match goals, LEAD() shows next match goals
-- Trend classification: Improving (more goals than last), Declining (fewer), Same (equal)
-- Arsenal had multiple 5-goal home performances
-- Manchester City showed consistent scoring patterns (1-6 goal range)
+- Arsenal showed a pattern of bouncing between high-scoring matches (5 goals) and low-scoring ones (0-2 goals)
+- Manchester City had more consistency, with most home matches falling in the 1-6 goal range
+- The LAG and LEAD functions let us see both past and future performance in one view
 
 **Functions Practiced:**
 - LAG() - Access previous row value (independently explored)
@@ -626,100 +563,92 @@ Manchester City  2024-02-10  2             3                     1              
 
 **Brief Explanation:**
 
-This advanced query tracks team performance over time using LAG and LEAD window functions (independently explored features). The CTE first transforms the data by UNION ALL to create a unified view where each row represents one team's perspective of a match (combining home and away appearances). LAG() retrieves the previous match's goals, enabling trend detection (Improving/Declining/Stable). LEAD() shows the next match for forward-looking analysis. The ROWS BETWEEN clause creates rolling windows - points over last 3 matches and average goals over last 5 matches. PARTITION BY team_id AND venue ensures home and away streaks are tracked separately, revealing venue-specific form patterns.
-
-**Why LAG/LEAD?** These independently-explored functions are essential for time-series analysis, enabling direct row-to-row comparisons without complex self-joins. They're crucial for detecting trends, momentum, and performance changes in sequential data.
+LAG and LEAD are powerful window functions that let you access data from other rows without doing complicated self-joins. LAG looks backward in the ordered set to grab the previous match's goals, while LEAD looks forward to the next match. By partitioning by team_id and ordering by match date, we ensure we're comparing consecutive matches for each team, not mixing up different teams' matches. The CASE statement then compares current goals to previous goals using LAG right within the condition, automatically categorizing whether a team's scoring is improving, declining, or staying the same. This kind of trend analysis would be much more cumbersome without these window functions - you'd need self-joins and complex date logic to achieve the same result.
 
 ---
 
-## Question 6: Player Demographics Analysis
+## Question 6: Player Nationality Distribution
 
-### What insights can we extract from player names and nationalities?
+### What are the top 5 most common player nationalities in each league?
 
 **Query:**
 ```sql
+WITH ranked_nationalities AS (
+    SELECT 
+        l.name AS league_name,
+        p.nationality,
+        COUNT(p.player_id) AS player_count,
+        ROUND(100.0 * COUNT(p.player_id) / SUM(COUNT(p.player_id)) OVER (PARTITION BY l.league_id), 2) AS percentage_of_league,
+        UPPER(SUBSTR(p.nationality, 1, 3)) AS country_code,
+        ROW_NUMBER() OVER (PARTITION BY l.league_id ORDER BY COUNT(p.player_id) DESC) AS rank_in_league
+    FROM players p
+    INNER JOIN teams t ON p.team_id = t.team_id
+    INNER JOIN leagues l ON t.league_id = l.league_id
+    GROUP BY p.nationality, l.league_id, l.name
+)
 SELECT 
-    p.name AS player_name,
-    UPPER(p.name) AS name_uppercase,
-    LENGTH(p.name) AS name_length,
-    SUBSTR(p.name, 1, 1) AS first_initial,
-    p.nationality,
-    p.position,
-    t.name AS team_name,
-    l.name AS league_name,
-    CASE 
-        WHEN p.name LIKE '% Junior%' OR p.name LIKE '%Jr.%' THEN 'Junior/Son'
-        WHEN p.name LIKE '% van %' OR p.name LIKE '% de %' OR p.name LIKE '% von %' THEN 'Noble Name'
-        WHEN p.name LIKE '%inho%' OR p.name LIKE '%ão%' THEN 'Portuguese/Brazilian Style'
-        ELSE 'Standard'
-    END AS name_pattern,
-    CASE 
-        WHEN LENGTH(p.name) <= 10 THEN 'Short'
-        WHEN LENGTH(p.name) <= 18 THEN 'Medium'
-        ELSE 'Long'
-    END AS name_length_category,
-    UPPER(SUBSTR(p.name, 1, 3)) || '-' || UPPER(SUBSTR(p.position, 1, 3)) AS player_code,
-    CASE
-        WHEN p.nationality = 'England' THEN 'English Player'
-        WHEN p.nationality IN ('Spain', 'Portugal', 'Italy', 'France') THEN 'Latin European'
-        WHEN p.nationality IN ('Germany', 'Netherlands', 'Belgium') THEN 'Germanic European'
-        WHEN p.nationality = 'Brazil' THEN 'Brazilian'
-        ELSE 'Other'
-    END AS nationality_group
-FROM players p
-INNER JOIN teams t ON p.team_id = t.team_id
-INNER JOIN leagues l ON t.league_id = l.league_id
-WHERE p.position IN ('Goalkeeper', 'Defence', 'Midfield', 'Offence')
-  AND (p.name LIKE '%a%' OR p.name LIKE '%e%')
-ORDER BY name_length DESC, p.name
-LIMIT 30;
+    league_name,
+    nationality,
+    player_count,
+    percentage_of_league,
+    country_code,
+    rank_in_league
+FROM ranked_nationalities
+WHERE rank_in_league <= 5
+ORDER BY league_name, rank_in_league;
 ```
 
 **Output/Screenshot:**
 ```
-player_name                   nationality  position  team_name                  name_length  first_initial  name_type  player_code
-----------------------------  -----------  --------  -------------------------  -----------  -------------  ---------  -----------
-Pierre-Emerick Aubameyang     Gabon        Offence   Olympique de Marseille     25           P              Standard   PIE-OLY
-Hans Nicolussi Caviglia       Italy        Offence   Juventus FC                23           H              Standard   HAN-JUV
-Alessandro Vinciguerra        Italy        Offence   Cagliari Calcio            22           A              Standard   ALE-CAG
-Chukwubuikem Ikwuemesi        Nigeria      Offence   US Salernitana 1919        22           C              Standard   CHU-US 
-Dominic Calvert-Lewin         England      Offence   Everton                    21           D              Standard   DOM-EVE
-Gian-Luca Waldschmidt         Germany      Offence   1. FC Köln                 21           G              Standard   GIA-1. 
-Moritz-Broni Kwarteng         Ghana        Offence   VfL Bochum 1848            21           M              Standard   MOR-VFL
-Khvicha Kvaratskhelia         Georgia      Offence   SSC Napoli                 21           K              Standard   KHV-SSC
-Abdessamad Ezzalzouli         Morocco      Offence   Real Betis Balompié        21           A              Standard   ABD-REA
-Stanis Idumbo-Muzambo         Belgium      Offence   Sevilla FC                 21           S              Standard   STA-SEV
-Cristian Cásseres Jr.         Venezuela    Offence   Toulouse FC                21           C              Standard   CRI-TOU
-Alexis Claude Maurice         France       Offence   OGC Nice                   21           A              Standard   ALE-OGC
-Jean-Philippe Mateta          France       Offence   Crystal Palace             20           J              Standard   JEA-CRY
-Luis Felipe Monteiro          Brazil       Offence   Nottingham Forest          20           L              Standard   LUI-NOT
-Silas Katompa Mvumpa          DR Congo     Offence   VfB Stuttgart              20           S              Standard   SIL-VFB
-Christian Kühlwetter          Germany      Offence   1. FC Heidenheim 1846      20           C              Standard   CHR-1. 
-Valentín Castellanos          Argentina    Offence   SS Lazio                   20           V              Standard   VAL-SS 
-Jørgen Strand Larsen          Norway       Offence   RC Celta de Vigo           20           J              Standard   JøR-RC 
-Shavy Warren Babicka          Gabon        Offence   Toulouse FC                20           S              Standard   SHA-TOU
-Tiago Fonseca Morais          Portugal     Offence   Lille OSC                  20           T              Standard   TIA-LIL
+league_name      nationality  player_count  percentage_of_league  country_code  rank_in_league
+---------------  -----------  ------------  --------------------  ------------  --------------
+Bundesliga       Germany      293           52.79                 GER           1
+Bundesliga       France       32            5.77                  FRA           2
+Bundesliga       Austria      27            4.86                  AUS           3
+Bundesliga       Denmark      13            2.34                  DEN           4
+Bundesliga       Netherlands  13            2.34                  NET           5
+La Liga          Spain        448           64.55                 SPA           1
+La Liga          Argentina    27            3.89                  ARG           2
+La Liga          France       21            3.03                  FRA           3
+La Liga          Brazil       19            2.74                  BRA           4
+La Liga          Uruguay      14            2.02                  URU           5
+Ligue 1          France       281           50.72                 FRA           1
+Ligue 1          Senegal      21            3.79                  SEN           2
+Ligue 1          Ivory Coast  18            3.25                  IVO           3
+Ligue 1          Brazil       16            2.89                  BRA           4
+Ligue 1          Portugal     15            2.71                  POR           5
+Premier League   England      282           41.84                 ENG           1
+Premier League   France       33            4.9                   FRA           2
+Premier League   Brazil       30            4.45                  BRA           3
+Premier League   Portugal     22            3.26                  POR           4
+Premier League   Spain        21            3.12                  SPA           5
+Serie A          Italy        285           42.35                 ITA           1
+Serie A          France       35            5.2                   FRA           2
+Serie A          Argentina    25            3.71                  ARG           3
+Serie A          Brazil       24            3.57                  BRA           4
+Serie A          Spain        19            2.82                  SPA           5
 ```
 
 **Key Insights:**
-- LENGTH() identifies longest names (15+ characters)
-- SUBSTR() extracts first initial and creates player codes
-- Name types: Standard (most), Junior (suffixes), Noble Name (van/de prefixes)
-- Player codes combine name + team abbreviation (e.g., "PIE-OLY")
+- La Liga has the strongest domestic presence, with nearly two-thirds (64.55%) of players being Spanish
+- The Premier League is the most international, with English players making up less than half (41.84%) of the league
+- French players appear in the top 5 of every single league, showing how widely French talent is distributed across Europe
+- After domestic players, the next most common nationalities tend to be France, Brazil, and nearby European countries
 
 **Functions Practiced:**
+- WITH (CTE) - Create temporary result set for ranking
 - UPPER() - Convert to uppercase (independently explored)
-- LENGTH() - Count characters in string (independently explored)
 - SUBSTR() - Extract substring (independently explored)
-- LIKE - Pattern matching with wildcards (independently explored)
-- || - String concatenation (independently explored)
-- CASE WHEN - Multiple pattern classifications
+- ROW_NUMBER() OVER - Rank nationalities within each league
+- PARTITION BY - Separate ranking by league
+- COUNT() - Count players per nationality
+- ROUND() - Format percentages
+- GROUP BY - Aggregate by nationality and league
+- WHERE - Filter to top 5 per league
 
 **Brief Explanation:**
 
-This query showcases string manipulation functions independently explored beyond class material. UPPER() standardizes names for comparison, LENGTH() analyzes name complexity, and SUBSTR() extracts components like initials. Pattern matching with LIKE identifies naming conventions: "Junior" suffixes, European noble prefixes ("van", "de", "von"), and Portuguese/Brazilian patterns ("inho", "ão"). String concatenation (||) creates custom player codes by combining name and position prefixes. These functions are essential for data cleaning, standardization, and pattern detection in real-world databases where text data often needs parsing and categorization.
-
-**Real-world applications:** Data quality checks, duplicate detection, name standardization, generating unique identifiers, and demographic analysis of text fields.
+This query uses a Common Table Expression to break down a complex calculation into manageable steps. First, we calculate how many players of each nationality are in each league, along with the percentage they represent. The nested window function in the percentage calculation is particularly interesting: the inner SUM(COUNT(...)) OVER (PARTITION BY league) calculates the total players per league, which we then divide into our nationality count to get percentages. String functions UPPER() and SUBSTR() create quick three-letter country codes - a simple but effective way to make the data more scannable. The final WHERE clause filters to show only the top 5 nationalities per league, revealing fascinating patterns about league composition. La Liga's strong domestic presence contrasts sharply with the Premier League's international makeup, likely reflecting different league philosophies and economic factors around player recruitment.
 
 ---
 
@@ -729,66 +658,40 @@ This query showcases string manipulation functions independently explored beyond
 
 **Query:**
 ```sql
-WITH match_date_breakdown AS (
-    SELECT 
-        m.match_id,
-        m.utc_date,
-        l.name AS league_name,
-        STRFTIME('%Y', m.utc_date) AS year,
-        STRFTIME('%m', m.utc_date) AS month,
-        STRFTIME('%d', m.utc_date) AS day,
-        STRFTIME('%W', m.utc_date) AS week_number,
-        STRFTIME('%w', m.utc_date) AS day_of_week_num,
-        CASE STRFTIME('%w', m.utc_date)
-            WHEN '0' THEN 'Sunday'
-            WHEN '1' THEN 'Monday'
-            WHEN '2' THEN 'Tuesday'
-            WHEN '3' THEN 'Wednesday'
-            WHEN '4' THEN 'Thursday'
-            WHEN '5' THEN 'Friday'
-            WHEN '6' THEN 'Saturday'
-        END AS day_name,
-        s.full_time_home + s.full_time_away AS total_goals
-    FROM matches m
-    INNER JOIN scores s ON m.match_id = s.match_id
-    INNER JOIN leagues l ON m.league_id = l.league_id
-),
-weekly_stats AS (
-    SELECT 
-        week_number,
-        league_name,
-        COUNT(*) AS matches_in_week,
-        AVG(total_goals) AS avg_goals,
-        MAX(total_goals) AS max_goals,
-        MIN(total_goals) AS min_goals
-    FROM match_date_breakdown
-    GROUP BY week_number, league_name
-)
 SELECT 
-    mdb.match_id,
-    mdb.utc_date,
-    mdb.league_name,
-    mdb.day_name,
-    mdb.month,
-    mdb.total_goals,
-    ws.matches_in_week,
-    ROUND(ws.avg_goals, 2) AS week_avg_goals,
-    ws.max_goals AS week_max_goals,
-    CASE 
-        WHEN mdb.day_of_week_num IN ('6', '0') THEN 'Weekend'
-        WHEN mdb.day_of_week_num = '5' THEN 'Friday'
-        ELSE 'Midweek'
-    END AS match_timing,
-    CASE 
-        WHEN mdb.month IN ('08', '09', '10', '11') THEN 'Fall'
-        WHEN mdb.month IN ('12', '01', '02') THEN 'Winter'
-        WHEN mdb.month IN ('03', '04', '05') THEN 'Spring'
-        ELSE 'Summer'
-    END AS season_period
-FROM match_date_breakdown mdb
-INNER JOIN weekly_stats ws ON mdb.week_number = ws.week_number AND mdb.league_name = ws.league_name
-ORDER BY mdb.utc_date
-LIMIT 50;
+    m.utc_date,
+    STRFTIME('%w', m.utc_date) AS day_number,
+    CASE STRFTIME('%w', m.utc_date)
+        WHEN '0' THEN 'Sunday'
+        WHEN '1' THEN 'Monday'
+        WHEN '2' THEN 'Tuesday'
+        WHEN '3' THEN 'Wednesday'
+        WHEN '4' THEN 'Thursday'
+        WHEN '5' THEN 'Friday'
+        WHEN '6' THEN 'Saturday'
+    END AS day_name,
+    COUNT(*) AS matches_on_this_day
+FROM matches m
+GROUP BY STRFTIME('%w', m.utc_date)
+ORDER BY day_number;
+
+-- Detailed match schedule with date parts
+SELECT 
+    m.match_id,
+    m.utc_date,
+    STRFTIME('%Y', m.utc_date) AS year,
+    STRFTIME('%m', m.utc_date) AS month,
+    STRFTIME('%d', m.utc_date) AS day,
+    CASE STRFTIME('%w', m.utc_date)
+        WHEN '0' THEN 'Sunday'
+        WHEN '6' THEN 'Saturday'
+        ELSE 'Weekday'
+    END AS weekend_or_weekday,
+    l.name AS league_name
+FROM matches m
+INNER JOIN leagues l ON m.league_id = l.league_id
+ORDER BY m.utc_date
+LIMIT 20;
 ```
 
 **Output/Screenshot:**
@@ -833,9 +736,10 @@ match_id  utc_date    year  month  day  weekend_or_weekday  league_name
 ```
 
 **Key Insights:**
-- Most matches on Saturday (701) and Sunday (660)
-- STRFTIME() extracts year, month, day, and day of week
-- Weekends dominate scheduling (Saturday + Sunday = 1,361 out of 1,752 matches)
+- Weekends dominate match scheduling: Saturday (701 matches) and Sunday (660 matches) account for over 75% of all matches
+- Friday evening slots (150 matches) are also popular, likely for TV broadcasting
+- Midweek matches (Tuesday through Thursday) are much less common, mostly reserved for rescheduled games or cup competitions
+- The season kicks off in August, as shown by the detailed schedule starting on August 11th
 
 **Functions Practiced:**
 - STRFTIME() - Extract date components (independently explored)
@@ -846,11 +750,7 @@ match_id  utc_date    year  month  day  weekend_or_weekday  league_name
 
 **Brief Explanation:**
 
-This complex query demonstrates CTEs and date functions (both independently explored). The first CTE (match_date_breakdown) uses STRFTIME() to extract date components: %Y (year), %m (month), %d (day), %W (week number), and %w (day of week, 0=Sunday). These format codes transform date values into analyzable parts. The second CTE (weekly_stats) aggregates matches by week, calculating average, max, and min goals. The main query joins both CTEs and adds classifications: match_timing (Weekend/Friday/Midweek) and season_period (Fall/Winter/Spring/Summer).
-
-**Why CTEs?** They break complex queries into logical, readable steps. Each CTE acts as a temporary named dataset that can be referenced multiple times, making queries easier to debug, maintain, and understand.
-
-**Why Date Functions?** Essential for time-based analysis: scheduling patterns, seasonal trends, day-of-week effects, and temporal aggregations. STRFTIME() is SQLite's primary date manipulation function.
+STRFTIME is SQLite's Swiss Army knife for date manipulation. The format code '%w' extracts the day of week as a number (0=Sunday through 6=Saturday), which we then convert to readable names using CASE WHEN. The '%Y', '%m', and '%d' format codes extract year, month, and day components respectively. This kind of date parsing is essential for time-based analysis - you can't group matches by "Saturday" if your data only stores full timestamps. The results confirm what any football fan knows: matches are scheduled on weekends to maximize attendance and viewership, with Saturday being the prime slot. The relatively small number of Tuesday and Wednesday matches suggests these are typically reserved for European competitions or makeup games, not regular league play.
 
 ---
 
@@ -860,47 +760,33 @@ This complex query demonstrates CTEs and date functions (both independently expl
 
 **Query:**
 ```sql
--- Home team statistics
+-- Home team wins
 SELECT 
-    'HOME' AS venue_type,
+    'HOME WINS' AS category,
     l.name AS league_name,
-    COUNT(DISTINCT m.home_team_id) AS unique_teams,
-    COUNT(m.match_id) AS total_matches,
-    SUM(CASE WHEN m.winner = 'HOME_TEAM' THEN 1 ELSE 0 END) AS wins,
-    SUM(CASE WHEN m.winner = 'DRAW' THEN 1 ELSE 0 END) AS draws,
-    SUM(CASE WHEN m.winner = 'AWAY_TEAM' THEN 1 ELSE 0 END) AS losses,
-    ROUND(100.0 * SUM(CASE WHEN m.winner = 'HOME_TEAM' THEN 1 ELSE 0 END) / COUNT(m.match_id), 2) AS win_percentage,
-    SUM(s.full_time_home) AS total_goals_scored,
-    SUM(s.full_time_away) AS total_goals_conceded,
-    ROUND(CAST(SUM(s.full_time_home) AS FLOAT) / COUNT(m.match_id), 2) AS avg_goals_scored,
-    ROUND(CAST(SUM(s.full_time_away) AS FLOAT) / COUNT(m.match_id), 2) AS avg_goals_conceded
+    COUNT(*) AS total_wins,
+    ROUND(AVG(s.full_time_home), 2) AS avg_goals_scored
 FROM matches m
 INNER JOIN scores s ON m.match_id = s.match_id
 INNER JOIN leagues l ON m.league_id = l.league_id
-GROUP BY l.league_id, l.name
+WHERE m.winner = 'HOME_TEAM'
+GROUP BY l.name
 
 UNION ALL
 
--- Away team statistics
+-- Away team wins
 SELECT 
-    'AWAY' AS venue_type,
+    'AWAY WINS' AS category,
     l.name AS league_name,
-    COUNT(DISTINCT m.away_team_id) AS unique_teams,
-    COUNT(m.match_id) AS total_matches,
-    SUM(CASE WHEN m.winner = 'AWAY_TEAM' THEN 1 ELSE 0 END) AS wins,
-    SUM(CASE WHEN m.winner = 'DRAW' THEN 1 ELSE 0 END) AS draws,
-    SUM(CASE WHEN m.winner = 'HOME_TEAM' THEN 1 ELSE 0 END) AS losses,
-    ROUND(100.0 * SUM(CASE WHEN m.winner = 'AWAY_TEAM' THEN 1 ELSE 0 END) / COUNT(m.match_id), 2) AS win_percentage,
-    SUM(s.full_time_away) AS total_goals_scored,
-    SUM(s.full_time_home) AS total_goals_conceded,
-    ROUND(CAST(SUM(s.full_time_away) AS FLOAT) / COUNT(m.match_id), 2) AS avg_goals_scored,
-    ROUND(CAST(SUM(s.full_time_home) AS FLOAT) / COUNT(m.match_id), 2) AS avg_goals_conceded
+    COUNT(*) AS total_wins,
+    ROUND(AVG(s.full_time_away), 2) AS avg_goals_scored
 FROM matches m
 INNER JOIN scores s ON m.match_id = s.match_id
 INNER JOIN leagues l ON m.league_id = l.league_id
-GROUP BY l.league_id, l.name
+WHERE m.winner = 'AWAY_TEAM'
+GROUP BY l.name
 
-ORDER BY league_name, venue_type;
+ORDER BY league_name, category;
 ```
 
 **Output/Screenshot:**
@@ -920,11 +806,10 @@ HOME WINS   Serie A          159         2.28
 ```
 
 **Key Insights:**
-- UNION ALL combines home and away statistics side-by-side
-- Home teams win more often in all leagues (e.g., Premier League: 175 home vs 123 away)
-- Home teams score more goals on average (except Serie A: 2.28 home vs 2.3 away)
-- Strongest home advantage: La Liga (167 home wins vs 106 away wins)
-- Premier League has highest scoring for both home (2.78) and away (2.64)
+- Home advantage is real: every league shows more home wins than away wins
+- La Liga has the strongest home advantage (167 home wins vs 106 away wins), while the Premier League is more balanced
+- Interestingly, Serie A is the only league where away teams actually score slightly more per win (2.3) than home teams (2.28)
+- The Premier League has the highest scoring for both home and away wins, reflecting its reputation as an attacking league
 
 **Functions Practiced:**
 - UNION ALL - Combine two result sets (independently explored)
@@ -936,11 +821,7 @@ HOME WINS   Serie A          159         2.28
 
 **Brief Explanation:**
 
-This query uses UNION ALL (independently explored) to compare home and away performance across all leagues. It runs two nearly identical queries - one calculating home team statistics, the other calculating away team statistics - then combines them into a single result set. UNION ALL keeps all rows (unlike UNION which removes duplicates), making it perfect for side-by-side comparisons.
-
-The query demonstrates conditional aggregation with SUM(CASE WHEN), counting wins/draws/losses by checking the winner column. It calculates win percentages, total goals, and averages for both venues. This reveals the "home field advantage" phenomenon - whether teams genuinely perform better at home across different leagues.
-
-**Why UNION ALL?** It's essential for creating comparative reports, combining data from different perspectives (home vs away, before vs after, actual vs predicted), and building summary tables that merge multiple aggregation levels into a single result set.
+UNION ALL is perfect for side-by-side comparisons like this one. We run essentially the same query twice - once filtering for home wins, once for away wins - then stack the results vertically using UNION ALL. The key difference from regular UNION is that UNION ALL keeps duplicate rows (though we don't have duplicates here) and is faster because it doesn't need to check for them. Both queries must return the same number of columns with compatible types, which is why we include the 'HOME WINS' and 'AWAY WINS' labels to distinguish the rows. The ORDER BY at the end sorts the combined result, interleaving home and away stats for each league. This visualization makes it easy to spot patterns: home advantage is universal but varies in strength, and the Premier League stands out for high-scoring matches regardless of venue.
 
 ---
 
@@ -950,99 +831,29 @@ The query demonstrates conditional aggregation with SUM(CASE WHEN), counting win
 |-------------|-------------|-----------|
 | **SELECT** | Retrieve specific columns from tables | Q1-Q8 |
 | **FROM** | Specify source table(s) | Q1-Q8 |
-| **WHERE** | Filter rows based on conditions | Q2, Q6, Q7 |
+| **WHERE** | Filter rows based on conditions | Q2, Q5, Q6, Q7, Q8 |
 | **ORDER BY** | Sort results | Q1-Q8 |
 | **LIMIT** | Restrict number of rows returned | Q2-Q7 |
 | **INNER JOIN** | Combine tables keeping only matching rows | Q2-Q8 |
 | **LEFT JOIN** | Combine tables keeping all left table rows | Q1 |
-| **GROUP BY** | Group rows for aggregation | Q1, Q2, Q7, Q8 |
-| **HAVING** | Filter grouped results | Q2 |
-| **COUNT()** | Count number of rows | Q1, Q2, Q7, Q8 |
+| **GROUP BY** | Group rows for aggregation | Q1, Q2, Q6, Q7, Q8 |
+| **HAVING** | Filter grouped results | Q2, Q6 |
+| **COUNT()** | Count number of rows | Q1, Q2, Q6, Q7, Q8 |
 | **AVG()** | Calculate average value | Q4, Q8 |
-| **SUM()** | Calculate total sum | Q8 |
-| **ROUND()** | Round numbers to decimals | Q2, Q4, Q7, Q8 |
-| **CAST()** | Convert data types | Q2, Q8 |
-| **CASE WHEN** | Conditional logic for data transformation | Q3, Q5, Q6, Q7 |
-| **OVER** | Define window for window functions | Q4, Q5 |
-| **PARTITION BY** | Divide data into groups for window functions | Q4, Q5 |
-| **ROW_NUMBER()** | Assign unique sequential number within partition | Q4 |
+| **SUM()** | Calculate total sum | Q6, Q8 |
+| **ROUND()** | Round numbers to decimals | Q2, Q4, Q6, Q7, Q8 |
+| **CAST()** | Convert data types | Q2 |
+| **CASE WHEN** | Conditional logic for data transformation | Q3, Q5, Q7 |
+| **WITH (CTE)** | Create temporary named result set | Q6 |
+| **OVER** | Define window for window functions | Q4, Q5, Q6 |
+| **PARTITION BY** | Divide data into groups for window functions | Q4, Q5, Q6 |
+| **ROW_NUMBER()** | Assign unique sequential number within partition | Q4, Q6 |
 | **RANK()** | Assign rank with gaps for ties | Q4 |
 | **LAG()** | Access previous row value in ordered set | Q5 |
 | **LEAD()** | Access next row value in ordered set | Q5 |
 | **UPPER()** | Convert text to uppercase | Q6 |
-| **LENGTH()** | Get character count of string | Q6 |
-| **SUBSTR()** | Extract substring from text | Q6, Q7 |
-| **LIKE** | Pattern matching with wildcards | Q6 |
-| **\|\|** | Concatenate strings | Q6 |
+| **SUBSTR()** | Extract substring from text | Q6 |
 | **STRFTIME()** | Extract and format date components | Q7 |
 | **UNION ALL** | Combine results from multiple queries | Q8 |
 
 ---
-
-## About This Project
-
-### Purpose
-
-This project serves as a comprehensive SQL reference guide for:
-- Technical interviews requiring SQL proficiency
-- Data analysis tasks in sports analytics
-- Learning advanced SQL concepts through practical examples
-- Building a personal knowledge base for future projects
-
-### Learning Outcomes
-
-By completing this project, you have demonstrated:
-
-1. Database Understanding - Working with normalized schemas and complex relationships
-2. Basic Queries - SELECT, WHERE, JOIN, GROUP BY, ORDER BY
-3. Aggregation - Statistical calculations across grouped data
-4. Advanced Joins - INNER, LEFT, and multi-table joins
-5. Conditional Logic - CASE WHEN for data transformation
-6. Window Functions - Ranking, trends, and comparative analysis
-7. String Functions - Text manipulation and pattern matching
-8. Date Functions - Temporal analysis and scheduling patterns
-9. Set Operations - UNION for combining diverse datasets
-
-### Dataset
-
-**Database:** sports_league.sqlite  
-**Source:** European football leagues (2023-2024 season)  
-**Size:**
-- 5 leagues
-- 96 teams
-- 3,150 players
-- 1,752 matches
-- 10 interconnected tables
-
----
-
-## Interview Preparation Tips
-
-When discussing these queries in interviews:
-
-1. **Start with the business question** - Explain what insight you're seeking
-2. **Walk through your approach** - Describe why you chose specific techniques (e.g., "I used window functions instead of self-joins because...")
-3. **Highlight advanced features** - Call out CTEs, window functions, LAG/LEAD
-4. **Discuss trade-offs** - E.g., "RANK vs DENSE_RANK depends on whether you want gaps", "INNER vs LEFT JOIN affects result completeness"
-5. **Mention optimization** - Indexing strategies (e.g., "I'd index match_id and team_id for faster joins")
-6. **Show adaptability** - Explain how you'd modify for different requirements
-
----
-
-## Notes
-
-- All queries tested in **SQLite version 3.41.2**
-- Window functions require SQLite 3.25.0+
-- CTEs supported in SQLite 3.8.3+
-- For PostgreSQL, minor syntax adjustments may be needed (especially date functions)
-
----
-
-**Created by**: Vihaan Manchanda  
-**Date**: October 2024  
-**Tools Used**: SQLite 3.41.2  
-**Database**: sports_league.sqlite (European Football Leagues 2023-2024)
-
----
-
-This reference guide covers all required SQL concepts plus independently explored features (string functions, date functions, LAG/LEAD, UNION) for comprehensive SQL mastery.
